@@ -7,6 +7,13 @@ import TaskEditorPage from './pages/TaskEditorPage'
 import StatsPage from './pages/StatsPage'
 import ProfilePage from './pages/ProfilePage'
 import { navigate } from './utils/navigation'
+import {
+  calculateTaskStats,
+  createTaskRecord,
+  deleteTaskRecord,
+  toggleTaskDone,
+  updateTaskRecord,
+} from './utils/taskLogic'
 import './App.css'
 
 function App() {
@@ -18,58 +25,26 @@ function App() {
   const activeTask = tasks.find((task) => task.id === activeTaskId) ?? tasks[0]
 
   const stats = useMemo(() => {
-    const completed = tasks.filter((task) => task.done).length
-    const completionRate = tasks.length ? Math.round((completed / tasks.length) * 100) : 0
-
-    return {
-      completed,
-      completionRate,
-      total: tasks.length,
-      weeklyCompleted: completed + 39,
-      streakCount: 45,
-    }
+    return calculateTaskStats(tasks)
   }, [tasks])
 
   function createTask(draft) {
-    const nextTask = {
-      id: String(Date.now()),
-      title: draft.title.trim(),
-      time: draft.time,
-      group: draft.group,
-      done: false,
-      category: draft.category,
-    }
-
-    setTasks((currentTasks) => [nextTask, ...currentTasks])
+    setTasks((currentTasks) => [createTaskRecord(draft), ...currentTasks])
     navigate('/tasks')
   }
 
   function updateTask(taskId, draft) {
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              title: draft.title.trim(),
-              time: draft.time,
-              group: draft.group,
-              category: draft.category,
-            }
-          : task,
-      ),
-    )
+    setTasks((currentTasks) => updateTaskRecord(currentTasks, taskId, draft))
     navigate('/tasks')
   }
 
   function deleteTask(taskId) {
-    setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId))
+    setTasks((currentTasks) => deleteTaskRecord(currentTasks, taskId))
     navigate('/tasks')
   }
 
   function toggleDone(taskId) {
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => (task.id === taskId ? { ...task, done: !task.done } : task)),
-    )
+    setTasks((currentTasks) => toggleTaskDone(currentTasks, taskId))
   }
 
   const page = useMemo(() => {
@@ -111,8 +86,10 @@ function App() {
   }, [activeTask, route, sortDesc, stats, tasks])
 
   return (
-    <main className="prototype-stage">
-      <section className="phone-shell">{page}</section>
+    <main className="bg-stage grid min-h-svh place-items-center p-7 max-[520px]:p-0">
+      <section className="w-[min(390px,100%)] min-h-[min(844px,calc(100svh-56px))] overflow-hidden rounded-[10px] bg-[#0d0f0d] shadow-[0_24px_70px_rgba(0,0,0,0.24)] max-[520px]:w-full max-[520px]:min-h-svh max-[520px]:rounded-none">
+        {page}
+      </section>
     </main>
   )
 }
