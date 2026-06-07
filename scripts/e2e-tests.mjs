@@ -2,10 +2,14 @@ import puppeteer from 'puppeteer'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import http from 'node:http'
+import { mkdirSync } from 'node:fs'
 
-const screenshotDir = '/Users/zhoujunbo/.gemini/antigravity-ide/brain/02816ebb-e1c4-40ab-8c61-b450bb152fd3'
+const screenshotDir = join(process.cwd(), 'tests', 'screenshots')
 const port = 5188
 const targetUrl = `http://localhost:${port}/`
+
+// Ensure screenshots directory exists
+mkdirSync(screenshotDir, { recursive: true })
 
 function checkUrl() {
   return new Promise((resolve) => {
@@ -38,19 +42,35 @@ async function run() {
   console.log('✓ Vite dev server is ready!')
 
   let browser
+  let isConnected = false
   try {
-    console.log('Starting E2E page automation tests...')
+    console.log('Trying to connect to existing Chrome instance at http://127.0.0.1:9222...')
+    browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' })
+    isConnected = true
+    console.log('✓ Connected to existing Chrome instance!')
+  } catch (err) {
+    console.log('Existing Chrome instance not found or failed to connect. Launching new headless browser...')
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     })
-    const page = await browser.newPage()
+  }
+
+  let page
+  try {
+    page = await browser.newPage()
     await page.setViewport({ width: 390, height: 844 })
 
     console.log(`Navigating to ${targetUrl}...`)
     await page.goto(targetUrl, { waitUntil: 'networkidle2' })
 
     const clickByText = async (selector, text) => {
+      // Wait for element to be present in DOM first
+      await page.waitForFunction((sel, txt) => {
+        const elements = Array.from(document.querySelectorAll(sel))
+        return elements.some(el => el.textContent.includes(txt))
+      }, { timeout: 5000 }, selector, text)
+
       await page.evaluate((sel, txt) => {
         const elements = Array.from(document.querySelectorAll(sel))
         const target = elements.find(el => el.textContent.includes(txt))
@@ -74,10 +94,12 @@ async function run() {
 
     // Step 3: Go back and navigate to New Task page
     console.log('Step 3: Going back to home and navigating to new task page...')
-    await page.click('header button')
+    const backBtn = await page.waitForSelector('header button')
+    await backBtn.click()
     await page.waitForFunction(() => window.location.hash === '#/' || window.location.hash === '')
     
-    await page.click('button[aria-label="新增任务"]')
+    const addBtn = await page.waitForSelector('button[aria-label="新增任务"]')
+    await addBtn.click()
     await page.waitForFunction(() => window.location.hash === '#/new')
     await page.screenshot({ path: join(screenshotDir, 'step3_new_task_page.png') })
     console.log('✓ New task page screenshot taken')
@@ -96,6 +118,12 @@ async function run() {
 
     // Step 5: Toggle task completion
     console.log('Step 5: Toggling completion status...')
+    // Wait for the task card to appear
+    await page.waitForFunction(() => {
+      const articles = Array.from(document.querySelectorAll('article'))
+      return articles.some(article => article.textContent.includes('测试 DevTools 任务'))
+    }, { timeout: 5000 })
+
     await page.evaluate(() => {
       const articles = Array.from(document.querySelectorAll('article'))
       const targetArticle = articles.find(article => article.textContent.includes('测试 DevTools 任务'))
@@ -131,22 +159,31 @@ async function run() {
 
     // Step 8: Go to Stats page
     console.log('Step 8: Navigating to stats page...')
-    await page.click('nav[aria-label="底部导航"] button[aria-label="统计"]')
+    const statsBtn = await page.waitForSelector('nav[aria-label="底部导航"] button[aria-label="统计"]')
+    await statsBtn.click()
     await page.waitForFunction(() => window.location.hash === '#/stats')
     await page.screenshot({ path: join(screenshotDir, 'step8_stats_page.png') })
     console.log('✓ Stats page screenshot taken')
 
     // Step 9: Go to Profile page
     console.log('Step 9: Navigating to profile page...')
-    await page.click('nav[aria-label="底部导航"] button[aria-label="我的"]')
+    const profileBtn = await page.waitForSelector('nav[aria-label="底部导航"] button[aria-label="我的"]')
+    await profileBtn.click()
     await page.waitForFunction(() => window.location.hash === '#/profile')
     await page.screenshot({ path: join(screenshotDir, 'step9_profile_page.png') })
     console.log('✓ Profile page screenshot taken')
 
     console.log('E2E automation tests completed successfully.')
   } finally {
+    if (page) {
+      await page.close().catch(() => {})
+    }
     if (browser) {
-      await browser.close()
+      if (isConnected) {
+        await browser.disconnect().catch(() => {})
+      } else {
+        await browser.close().catch(() => {})
+      }
     }
     vite.kill()
     console.log('Vite dev server stopped.')
